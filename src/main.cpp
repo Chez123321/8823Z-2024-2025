@@ -8,6 +8,7 @@
 /*----------------------------------------------------------------------------*/
 
 //$ To keep things clean, declare functions at the top and write what they do at the bottom
+#include <functional>
 
 // Include library files
 #include "../evAPI/evAPIFiles.h"
@@ -22,20 +23,29 @@ evAPI::DriverBaseControl driveControl = evAPI::DriverBaseControl(&primaryControl
 evAPI::vexUI UI;
 
 // Setup vex component objects (motors, sensors, etc.) --------------------
-vex::rotation leftEncoder = vex::rotation(vex::PORT14);
+auto leftEncoder = vex::rotation(vex::PORT14);
 auto rightEncoder = vex::rotation(15);
 auto centerEncoder = vex::rotation(16);
+
+auto intakeMotor = vex::motor(vex::PORT5, vex::gearSetting::ratio6_1, true);
+
+auto triport = vex::triport(vex::PORT22);
+auto backLatch = vex::digital_out(triport.A);
+
+auto intakeSensor = vex::optical(vex::PORT3);
 
 //Setup Auto Button UI IDs
 enum autoOptions {
   //*General
   //Page 1
-  AUTO_DO_NOTHING = 1,
-  AUTO_ODOM
+  AUTO_DO_NOTHING = 0,
+  AUTO_RIGHT,
+  AUTO_LEFT,
 };
 
 //Variables to display on the controller
 uint32_t batteryLevel = Brain.Battery.capacity();
+int speed = 0;
 std::string selectedAutoName = "";
 
 //Setup controller UI IDs
@@ -61,28 +71,33 @@ void pre_auton(void) {
   //* Setup for auto selection UI ============================================
   // Add all the buttons
   UI.autoSelectorUI.addButton(AUTO_DO_NOTHING, vex::red);
-  UI.autoSelectorUI.addButton(AUTO_ODOM, vex::green);
-  
+  UI.autoSelectorUI.addButton(AUTO_RIGHT, vex::green);
+  UI.autoSelectorUI.addButton(AUTO_LEFT, vex::blue);
+
   // Set all the titles
   UI.autoSelectorUI.setButtonTitle(AUTO_DO_NOTHING, "DO NOTHING!");
-  UI.autoSelectorUI.setButtonTitle(AUTO_ODOM, "Odom");
+  UI.autoSelectorUI.setButtonTitle(AUTO_RIGHT, "Right Side Auton");
+  UI.autoSelectorUI.setButtonTitle(AUTO_LEFT, "Left Side Auton");
 
   // Set all the descriptions
   UI.autoSelectorUI.setButtonDescription(AUTO_DO_NOTHING, "The robot will do nothing.");
-  UI.autoSelectorUI.setButtonDescription(AUTO_ODOM, "Odom");
+  UI.autoSelectorUI.setButtonDescription(AUTO_RIGHT, "Right Side Auton");
+  UI.autoSelectorUI.setButtonDescription(AUTO_LEFT, "Left Side Auton");
 
   // Select all the icons
   UI.autoSelectorUI.setButtonIcon(AUTO_DO_NOTHING, UI.autoSelectorUI.icons.exclamationMark);
-  UI.autoSelectorUI.setButtonIcon(AUTO_ODOM, UI.autoSelectorUI.icons.number0);
+  UI.autoSelectorUI.setButtonIcon(AUTO_RIGHT, UI.autoSelectorUI.icons.rightArrow);
+  UI.autoSelectorUI.setButtonIcon(AUTO_LEFT, UI.autoSelectorUI.icons.leftArrow);
 
   //Setup parameters for auto selector
-  UI.autoSelectorUI.setSelectedButton(AUTO_DO_NOTHING);
+  UI.autoSelectorUI.setSelectedButton(AUTO_LEFT);
   UI.autoSelectorUI.setSelectedPage(0);
   UI.autoSelectorUI.setDataDisplayTime(1500);
 
   //*Setup controller UI
   //Driver Control Screen
   UI.primaryControllerUI.addData(MATCH_SCREEN, "Battery: ", batteryLevel);
+  UI.primaryControllerUI.addData(MATCH_SCREEN, "Speed : ", speed);
 
   //Disabled Screen
   UI.primaryControllerUI.addData(DISABLED_AUTO_SCREEN, "Battery: ", batteryLevel);
@@ -103,15 +118,15 @@ void pre_auton(void) {
   driveBase.setDebugState(true);
 
   // Setup motor settings
-  driveBase.leftPortSetup(11, 12, 13);
-  driveBase.rightPortSetup(1, 2, 3);
-  driveBase.leftReverseSetup(true, true, true);
-  driveBase.rightReverseSetup(false, false, false);
-  driveBase.geartrainSetup(3.25, 36, 48);
+  driveBase.leftPortSetup(11, 12, 13, 15);
+  driveBase.rightPortSetup(7, 8, 9, 10);
+  driveBase.leftReverseSetup(true, true, true, true);
+  driveBase.rightReverseSetup(false, false, false, false);
+  driveBase.geartrainSetup(3.25, 24, 36);
   driveBase.setDriveBaseWidth(13);
   
   // Setup inertial sensor settings
-  driveBase.setupInertialSensor(17);
+  driveBase.setupInertialSensor(4);
 
   // Set default speeds
   driveBase.setDriveSpeed(100);
@@ -122,9 +137,11 @@ void pre_auton(void) {
   driveBase.setStoppingMode(vex::brake);
 
   // Setup PID
-  driveBase.setupDrivePID(0.125, 10, 0.005, 12, 2, 125);
+  // driveBase.setupDrivePID(0.125, 10, 0.005, 12, 2, 125);
+  driveBase.setupDrivePID(0.125, 4, 0.05, 12, 2, 125);
   driveBase.setupDriftPID(0.015, 0, 0, 1, 0, 0);
-  driveBase.setupTurnPID(0.65, 0, .65, 3, 1, 100);
+  // driveBase.setupTurnPID(0.65, 0, .65, 3, 1, 100);
+  driveBase.setupTurnPID(0.6, 1, .65, 2, 1, 100);
   driveBase.setupArcPID(0.1, 5, 0, 3, 2, 200);
   driveBase.setupArcDriftPID(0.2, 0, 0, 1, 0, 0);
 
@@ -135,6 +152,20 @@ void pre_auton(void) {
   //* Setup controller callbacks =============================================
   // Example:
   // primaryController.LEFT_WINGS_BUTTON.pressed(toggleLeftWing);
+  primaryController.ButtonR1.pressed([](){
+    static bool spinning = false;
+    if (spinning) {
+      intakeMotor.stop();
+      spinning = false;
+    } else {
+      intakeMotor.spin(vex::directionType::fwd, 100.0, vex::percentUnits::pct);
+      spinning = true;
+    }
+  });
+
+  primaryController.ButtonL1.pressed([](){
+    backLatch.set(!backLatch.value());
+  });
 
   //*Display calibrating and autonomous information if connected to a field or comp switch
   if(evAPI::isConnectToField()) UI.primaryControllerUI.setScreenLine(INERTIAL_CALIBRATE_SCREEN);
@@ -148,30 +179,107 @@ void pre_auton(void) {
   }
   printf("Calibrated\n");
   if(evAPI::isConnectToField()) UI.primaryControllerUI.setScreenLine(DISABLED_AUTO_SCREEN);
+
+  intakeSensor.setLight(vex::ledState::on);
+  intakeSensor.setLightPower(75);
 }
 
+void waitRingIntaked() {
+    while (true) {
+      vex::color detectedColor = intakeSensor.color();
+      if (detectedColor == vex::color::red || detectedColor == vex::color::blue) {
+        break;
+      }
+    }
+}
 
+template<typename T>
+void onRingIntaked(T callback) {
+  auto fn = [](void* callback) {
+    waitRingIntaked();
+    (*static_cast<T*>(callback))();
+  };
+
+  vex::thread(fn, &callback).detach();
+}
 
 /*---------------------------------------------------------------------------------*/
 /*                                 Autonomous Task                                 */
 /*---------------------------------------------------------------------------------*/
 void autonomous(void) {
-
   //Times how long auto takes
   vex::timer autoTimer;
 
   switch (UI.autoSelectorUI.getSelectedButton()) {
-    case AUTO_ODOM: {
-        auto odomThread = vex::thread([]() {
-          while (true) {
-            double leftRotation = leftEncoder.angle();
-            printf("%f\n", leftRotation);
-            vex::task::sleep(20);
-          }
-        });
-      }
+    case AUTO_RIGHT:
+      driveBase.driveBackward(14.5, 50);
+      driveBase.driveBackward(10, 30);
+
+      backLatch.set(true);
+
+      intakeMotor.spin(vex::directionType::fwd, 40, vex::pct);
+      vex::this_thread::sleep_for(3000);
+      intakeMotor.stop();
+
+      driveBase.turnToHeading(-88);
+      intakeMotor.spin(vex::directionType::fwd, 100, vex::pct);
+      driveBase.driveForward(18, 40);
+
+      backLatch.set(false);
+      vex::this_thread::sleep_for(1500);
+      backLatch.set(true);
+      vex::this_thread::sleep_for(500);
+
+      waitRingIntaked();
+      intakeMotor.spin(vex::directionType::fwd, 40, vex::pct);
+
+      driveBase.turnToHeading(-180);
+
+      backLatch.set(false);
+      vex::this_thread::sleep_for(1500);
+      backLatch.set(true);
+      vex::this_thread::sleep_for(500);
       break;
 
+    case AUTO_LEFT: {
+      bool go = false;
+      driveBase.driveBackward(14.5, 50);
+      driveBase.driveBackward(10, 30);
+
+      backLatch.set(true);
+      
+      intakeMotor.spin(vex::directionType::fwd, 40, vex::pct);
+      vex::this_thread::sleep_for(3000);
+      intakeMotor.stop();
+
+      driveBase.turnToHeading(88);
+      intakeMotor.spin(vex::directionType::fwd, 100, vex::pct);
+      driveBase.driveForward(20, 40);
+
+      onRingIntaked([&](){
+        intakeMotor.spin(vex::directionType::fwd, 40, vex::pct);
+        vex::this_thread::sleep_for(3000);
+        go = true;
+      });
+
+      backLatch.set(false);
+      vex::this_thread::sleep_for(1500);
+      backLatch.set(true);
+
+      while (true) {
+        if (go) {
+          break;
+        }
+      }
+      
+      driveBase.turnToHeading(180);
+
+      backLatch.set(false);
+      vex::this_thread::sleep_for(1500);
+      backLatch.set(true);
+      vex::this_thread::sleep_for(500);
+      break;
+    }
     //*Do nothing auto
     case AUTO_DO_NOTHING:
       //!DO NOTHING HERE
@@ -198,12 +306,23 @@ double changeToDistance(double change, double radius) {
 
 void usercontrol(void) {
   UI.primaryControllerUI.setScreenLine(MATCH_SCREEN);
-  
+
   while (1) {
     //=========== All drivercontrol code goes between the lines ==============
 
     //* Control the base code -----------------------------
     driveControl.driverLoop();
+
+    vex::color detectedColor = intakeSensor.color();
+    if (detectedColor == vex::color::red || detectedColor == vex::color::blue) {
+      vex::thread([](){
+        intakeMotor.setVelocity(40, vex::percentUnits::pct);
+        vex::this_thread::sleep_for(1500);
+        intakeMotor.setVelocity(100, vex::percentUnits::pct);
+      }).detach();
+    }
+    
+    
 
     //========================================================================
     //* Control the intake code ---------------------------
@@ -219,7 +338,7 @@ int main() {
   // Set up callbacks for autonomous and driver control periods.
   Competition.autonomous(autonomous);
   Competition.drivercontrol(usercontrol);
-
+  
   // Run the pre-autonomous function.
   pre_auton();
 
@@ -227,6 +346,7 @@ int main() {
   while (true) {
     //*Update controller UI data
     batteryLevel = Brain.Battery.capacity();
+    speed = (driveBase.getMotorSpeed(vex::left) + driveBase.getMotorSpeed(vex::right)) / 2;
 
     //Update auto name
     selectedAutoName = UI.autoSelectorUI.getSelectedButtonTitle();
