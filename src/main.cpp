@@ -24,6 +24,7 @@
 #define RIGHT_ENCODER_PORT 16
 #define CENTER_ENCODER_PORT 17
 #define TRIPORT_PORT 22
+#define BACKLATCH A
 
 // Select namespaces ------------------------------------------------------
 // using namespace vex;
@@ -43,7 +44,7 @@ auto intakeMotor = vex::motor(PORT(INTAKE_MOTOR_PORT), vex::gearSetting::ratio6_
 bool intakeMotorSpinning = false;
 
 auto triport = vex::triport(PORT(TRIPORT_PORT));
-auto backLatch = vex::digital_out(triport.A);
+auto backLatch = vex::digital_out(triport.BACKLATCH);
 
 auto intakeSensor = vex::optical(PORT(INTAKE_SENSOR_PORT));
 
