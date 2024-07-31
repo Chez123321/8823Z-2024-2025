@@ -13,6 +13,18 @@
 // Include library files
 #include "../evAPI/evAPIFiles.h"
 
+#define PORT_HELP(x) vex::PORT##x
+#define PORT(x) PORT_HELP(x)
+
+#define INTAKE_SENSOR_PORT 3
+#define INTAKE_MOTOR_PORT 5
+#define RIGHT_BASE_PORTS 7, 8, 9, 10
+#define LEFT_BASE_PORTS 11, 12, 13, 14
+#define LEFT_ENCODER_PORT 15
+#define RIGHT_ENCODER_PORT 16
+#define CENTER_ENCODER_PORT 17
+#define TRIPORT_PORT 22
+
 // Select namespaces ------------------------------------------------------
 // using namespace vex;
 // using namespace evAPI;
@@ -23,16 +35,17 @@ evAPI::DriverBaseControl driveControl = evAPI::DriverBaseControl(&primaryControl
 evAPI::vexUI UI;
 
 // Setup vex component objects (motors, sensors, etc.) --------------------
-auto leftEncoder = vex::rotation(vex::PORT14);
-auto rightEncoder = vex::rotation(15);
-auto centerEncoder = vex::rotation(16);
+auto leftEncoder = vex::rotation(PORT(LEFT_ENCODER_PORT));
+auto rightEncoder = vex::rotation(PORT(RIGHT_ENCODER_PORT));
+auto centerEncoder = vex::rotation(PORT(CENTER_ENCODER_PORT));
 
-auto intakeMotor = vex::motor(vex::PORT5, vex::gearSetting::ratio6_1, true);
+auto intakeMotor = vex::motor(PORT(INTAKE_MOTOR_PORT), vex::gearSetting::ratio6_1, true);
+bool intakeMotorSpinning = false;
 
-auto triport = vex::triport(vex::PORT22);
+auto triport = vex::triport(PORT(TRIPORT_PORT));
 auto backLatch = vex::digital_out(triport.A);
 
-auto intakeSensor = vex::optical(vex::PORT3);
+auto intakeSensor = vex::optical(PORT(INTAKE_SENSOR_PORT));
 
 //Setup Auto Button UI IDs
 enum autoOptions {
@@ -118,8 +131,8 @@ void pre_auton(void) {
   driveBase.setDebugState(true);
 
   // Setup motor settings
-  driveBase.leftPortSetup(11, 12, 13, 15);
-  driveBase.rightPortSetup(7, 8, 9, 10);
+  driveBase.leftPortSetup(LEFT_BASE_PORTS);
+  driveBase.rightPortSetup(RIGHT_BASE_PORTS);
   driveBase.leftReverseSetup(true, true, true, true);
   driveBase.rightReverseSetup(false, false, false, false);
   driveBase.geartrainSetup(3.25, 24, 36);
@@ -153,13 +166,22 @@ void pre_auton(void) {
   // Example:
   // primaryController.LEFT_WINGS_BUTTON.pressed(toggleLeftWing);
   primaryController.ButtonR1.pressed([](){
-    static bool spinning = false;
-    if (spinning) {
+    if (intakeMotorSpinning) {
       intakeMotor.stop();
-      spinning = false;
+      intakeMotorSpinning = false;
     } else {
       intakeMotor.spin(vex::directionType::fwd, 100.0, vex::percentUnits::pct);
-      spinning = true;
+      intakeMotorSpinning = true;
+    }
+  });
+
+  primaryController.ButtonR2.pressed([](){
+    if (intakeMotorSpinning) {
+      intakeMotor.stop();
+      intakeMotorSpinning = false;
+    } else {
+      intakeMotor.spin(vex::directionType::rev, 100.0, vex::percentUnits::pct);
+      intakeMotorSpinning = true;
     }
   });
 
@@ -243,8 +265,8 @@ void autonomous(void) {
 
     case AUTO_LEFT: {
       bool go = false;
-      driveBase.driveBackward(14.5, 50);
-      driveBase.driveBackward(10, 30);
+      driveBase.driveBackward(12.5, 50);
+      driveBase.driveBackward(12, 30);
 
       backLatch.set(true);
       
@@ -265,10 +287,14 @@ void autonomous(void) {
       backLatch.set(false);
       vex::this_thread::sleep_for(1500);
       backLatch.set(true);
+      backLatch.set(true);
+      backLatch.set(true);
 
       while (true) {
         if (go) {
           break;
+        } else {
+          vex::this_thread::sleep_for(10);
         }
       }
       
