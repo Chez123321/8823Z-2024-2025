@@ -42,6 +42,7 @@ auto centerEncoder = vex::rotation(PORT(CENTER_ENCODER_PORT));
 
 auto intakeMotor = vex::motor(PORT(INTAKE_MOTOR_PORT), vex::gearSetting::ratio6_1, true);
 bool intakeMotorSpinning = false;
+bool intakeMotorOverride = false;
 
 auto triport = vex::triport(PORT(TRIPORT_PORT));
 auto backLatch = vex::digital_out(triport.BACKLATCH);
@@ -173,6 +174,7 @@ void pre_auton(void) {
     } else {
       intakeMotor.spin(vex::directionType::fwd, 100.0, vex::percentUnits::pct);
       intakeMotorSpinning = true;
+      intakeMotorOverride = false;
     }
   });
 
@@ -181,8 +183,9 @@ void pre_auton(void) {
       intakeMotor.stop();
       intakeMotorSpinning = false;
     } else {
-      intakeMotor.spin(vex::directionType::rev, 100.0, vex::percentUnits::pct);
       intakeMotorSpinning = true;
+      intakeMotorOverride = true;
+      intakeMotor.spin(vex::directionType::rev, 100.0, vex::percentUnits::pct);
     }
   });
 
@@ -333,16 +336,32 @@ double changeToDistance(double change, double radius) {
 
 void usercontrol(void) {
   UI.primaryControllerUI.setScreenLine(MATCH_SCREEN);
-
+  bool l2intake = false;
   while (1) {
     //=========== All drivercontrol code goes between the lines ==============
 
     //* Control the base code -----------------------------
     driveControl.driverLoop();
 
+    if (primaryController.ButtonL2.pressing()) {
+      intakeMotorOverride = true;
+      intakeMotor.spin(vex::directionType::fwd, 100, vex::pct);
+      l2intake = true;
+    } else {
+      if (!intakeMotorSpinning) {
+        intakeMotor.stop();
+      }
+      if (l2intake == true) {
+        l2intake = false;
+        intakeMotorOverride = false;
+      }
+      
+    }
+    
     vex::color detectedColor = intakeSensor.color();
-    if (detectedColor == vex::color::red || detectedColor == vex::color::blue) {
-      vex::thread([](){
+    if (!intakeMotorOverride && (detectedColor == vex::color::red || detectedColor == vex::color::blue)) {
+      vex::thread([]() {
+        printf("detect\n");
         intakeMotor.setVelocity(40, vex::percentUnits::pct);
         vex::this_thread::sleep_for(1500);
         intakeMotor.setVelocity(100, vex::percentUnits::pct);
